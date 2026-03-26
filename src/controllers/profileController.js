@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const Mechanic = require('../models/Mechanic');
+const { handleError } = require('../utils/errorHandler');
 
 // @desc    Get user/mechanic profile
 // @route   GET /api/profile
@@ -13,15 +14,8 @@ const getProfile = async (req, res) => {
       if (!profile) {
         return res.status(404).json({ success: false, message: 'Mechanic profile not found.' });
       }
-    } else if (req.user.role === 'admin') {
-      profile = {
-        _id: 'admin_001',
-        name: 'Administrator',
-        email: process.env.ADMIN_EMAIL || 'admin@vassist.com',
-        role: 'admin',
-        profileImage: '',
-      };
     } else {
+      // Handles both 'user' and 'admin' roles — admin is now a real User document
       profile = await User.findById(req.user.id).select('-password');
       if (!profile) {
         return res.status(404).json({ success: false, message: 'User profile not found.' });
@@ -30,8 +24,7 @@ const getProfile = async (req, res) => {
 
     res.json({ success: true, data: { profile } });
   } catch (error) {
-    console.error('Get profile error:', error);
-    res.status(500).json({ success: false, message: 'Server error.' });
+    return handleError(res, error, 'getProfile');
   }
 };
 
@@ -56,13 +49,18 @@ const updateProfile = async (req, res) => {
         return res.status(404).json({ success: false, message: 'Mechanic not found.' });
       }
     } else {
+      // Handles both 'user' and 'admin' — admin is now a real User document
       const updateFields = {};
-      if (name) updateFields.name = name;
-      if (phone !== undefined) updateFields.phone = phone;
+      if (name) updateFields.name = name.trim();
+      if (phone !== undefined) updateFields.phone = phone.trim();
       if (notifications !== undefined) updateFields.notifications = notifications;
       if (language) updateFields.language = language;
 
-      profile = await User.findByIdAndUpdate(req.user.id, { $set: updateFields }, { new: true, runValidators: true }).select('-password');
+      profile = await User.findByIdAndUpdate(
+        req.user.id,
+        { $set: updateFields },
+        { new: true, runValidators: true }
+      ).select('-password');
 
       if (!profile) {
         return res.status(404).json({ success: false, message: 'User not found.' });
@@ -75,8 +73,7 @@ const updateProfile = async (req, res) => {
       data: { profile },
     });
   } catch (error) {
-    console.error('Update profile error:', error);
-    res.status(500).json({ success: false, message: 'Server error while updating profile.' });
+    return handleError(res, error, 'updateProfile');
   }
 };
 
@@ -115,8 +112,7 @@ const uploadProfileImage = async (req, res) => {
       data: { profileImage: imageUrl, profile },
     });
   } catch (error) {
-    console.error('Upload profile image error:', error);
-    res.status(500).json({ success: false, message: 'Server error during image upload.' });
+    return handleError(res, error, 'uploadProfileImage');
   }
 };
 
@@ -161,8 +157,7 @@ const changePassword = async (req, res) => {
 
     res.json({ success: true, message: 'Password changed successfully.' });
   } catch (error) {
-    console.error('Change password error:', error);
-    res.status(500).json({ success: false, message: 'Server error while changing password.' });
+    return handleError(res, error, 'changePassword');
   }
 };
 

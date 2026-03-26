@@ -2,13 +2,14 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const connectDB = require('./src/config/db');
+const seedAdmin = require('./src/utils/adminSeeder');
 
 dotenv.config();
 
 const app = express();
 
-// Connect to MongoDB
-connectDB();
+// Connect to MongoDB then seed admin
+connectDB().then(() => seedAdmin());
 
 // Middleware
 app.use(cors({
@@ -38,15 +39,10 @@ app.use((req, res, next) => {
   res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found` });
 });
 
-// Global error handler
+// Global error handler — catches errors passed via next(err)
 app.use((err, req, res, next) => {
-  console.error('Global error:', err.stack);
-  const statusCode = err.statusCode || 500;
-  res.status(statusCode).json({
-    success: false,
-    message: err.message || 'Internal Server Error',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
-  });
+  const { handleError } = require('./src/utils/errorHandler');
+  handleError(res, err, `${req.method} ${req.originalUrl}`);
 });
 
 const PORT = process.env.PORT || 5000;

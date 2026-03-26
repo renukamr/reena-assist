@@ -7,6 +7,33 @@ const generateToken = (id, role) => {
   return jwt.sign({ id, role }, process.env.JWT_SECRET, { expiresIn: '30d' });
 };
 
+// Helper: build safe user payload (no password, always includes createdAt)
+const buildUserPayload = (user) => ({
+  _id: user._id,
+  name: user.name,
+  email: user.email,
+  phone: user.phone || '',
+  profileImage: user.profileImage || '',
+  notifications: user.notifications !== undefined ? user.notifications : true,
+  language: user.language || 'en',
+  role: user.role || 'user',
+  createdAt: user.createdAt,
+});
+
+// Helper: build safe mechanic payload
+const buildMechanicPayload = (mechanic) => ({
+  _id: mechanic._id,
+  name: mechanic.name,
+  email: mechanic.email,
+  phone: mechanic.phone || '',
+  profileImage: mechanic.profileImage || '',
+  specialization: mechanic.specialization || [],
+  rating: mechanic.rating || { average: 0, count: 0 },
+  isApproved: mechanic.isApproved,
+  role: 'mechanic',
+  createdAt: mechanic.createdAt,
+});
+
 // @desc    Register a new user
 // @route   POST /api/auth/register
 const registerUser = async (req, res) => {
@@ -24,7 +51,6 @@ const registerUser = async (req, res) => {
     }
 
     const user = await User.create({ name, email, phone, password });
-
     const token = generateToken(user._id, 'user');
 
     res.status(201).json({
@@ -32,14 +58,7 @@ const registerUser = async (req, res) => {
       message: 'Registration successful.',
       data: {
         token,
-        user: {
-          _id: user._id,
-          name: user.name,
-          email: user.email,
-          phone: user.phone,
-          profileImage: user.profileImage,
-          role: 'user',
-        },
+        user: buildUserPayload(user),
       },
     });
   } catch (error) {
@@ -79,16 +98,7 @@ const loginUser = async (req, res) => {
       message: 'Login successful.',
       data: {
         token,
-        user: {
-          _id: user._id,
-          name: user.name,
-          email: user.email,
-          phone: user.phone,
-          profileImage: user.profileImage,
-          notifications: user.notifications,
-          language: user.language,
-          role: user.role || 'user',
-        },
+        user: buildUserPayload(user),
       },
     });
   } catch (error) {
@@ -167,7 +177,11 @@ const loginMechanic = async (req, res) => {
     }
 
     if (!mechanic.isApproved) {
-      return res.status(403).json({ success: false, message: 'Your account is pending admin approval.' });
+      return res.status(403).json({
+        success: false,
+        message: 'Your account is pending admin approval. You will be notified once approved.',
+        code: 'PENDING_APPROVAL',
+      });
     }
 
     const token = generateToken(mechanic._id, 'mechanic');
@@ -177,17 +191,7 @@ const loginMechanic = async (req, res) => {
       message: 'Login successful.',
       data: {
         token,
-        mechanic: {
-          _id: mechanic._id,
-          name: mechanic.name,
-          email: mechanic.email,
-          phone: mechanic.phone,
-          profileImage: mechanic.profileImage,
-          specialization: mechanic.specialization,
-          rating: mechanic.rating,
-          isApproved: mechanic.isApproved,
-          role: 'mechanic',
-        },
+        mechanic: buildMechanicPayload(mechanic),
       },
     });
   } catch (error) {
@@ -196,7 +200,7 @@ const loginMechanic = async (req, res) => {
   }
 };
 
-// @desc    Admin login
+// @desc    Admin login — queries real seeded admin User document
 // @route   POST /api/auth/admin/login
 const loginAdmin = async (req, res) => {
   const { email, password } = req.body;
@@ -206,34 +210,35 @@ const loginAdmin = async (req, res) => {
   }
 
   try {
-    const adminEmail = process.env.ADMIN_EMAIL || 'admin@vassist.com';
-    const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@123';
+    const adminEmail = (process.env.ADMIN_EMAIL || 'admin@vassist.com').toLowerCase();
 
-    if (email.toLowerCase() !== adminEmail.toLowerCase()) {
+    if (email.toLowerCase() !== adminEmail) {
       return res.status(401).json({ success: false, message: 'Invalid admin credentials.' });
     }
 
-    if (password !== adminPassword) {
+    // Query the real seeded admin user (bcrypt password comparison)
+    const admin = await User.findOne({ email: adminEmail, role: 'admin' }).select('+password');
+    if (!admin) {
+      return res.status(401).json({ success: false, message: 'Admin account not found. Please restart the server to seed.' });
+    }
+
+    if (!admin.isActive) {
+      return res.status(403).json({ success: false, message: 'Admin account has been deactivated.' });
+    }
+
+    const isMatch = await admin.matchPassword(password);
+    if (!isMatch) {
       return res.status(401).json({ success: false, message: 'Invalid admin credentials.' });
     }
 
-    const token = jwt.sign(
-      { id: 'admin_001', role: 'admin', email: adminEmail },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' }
-    );
+    const token = generateToken(admin._id, 'admin');
 
     res.json({
       success: true,
       message: 'Admin login successful.',
       data: {
         token,
-        user: {
-          _id: 'admin_001',
-          name: 'Administrator',
-          email: adminEmail,
-          role: 'admin',
-        },
+        user: buildUserPayload(admin),
       },
     });
   } catch (error) {
