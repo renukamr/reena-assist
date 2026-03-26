@@ -39,7 +39,6 @@ const connectDB = async () => {
         cached.promise = null;
         console.error(`✗ MongoDB connection error: ${error.message}`);
         // Do NOT call process.exit — let individual requests fail gracefully
-        // instead of crashing the entire serverless function instance
         throw error;
       });
   }
